@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  vault:
+    build:
+      context: . # Build from the current directory
+    container_name: vault_test
+    volumes:
+      - ./config:/vault/config
+      - ./data:/vault/data
+      - ./certs:/vault/certs
+    ports:
+      - "8200:8200" # API port
+      - "8201:8201" # Cluster port
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - VAULT_ADDR=https://host.docker.internal:8200
+      - VAULT_CACERT=/vault/certs/vault.crt
+    networks:
+      - vaultnet
+    restart: always
+    entrypoint: vault server -config=/vault/config/config.hcl
+    depends_on:
+      consul:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--cacert", "/vault/certs/vault.crt", "https://localhost:8200/v1/sys/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  consul:
+    image: hashicorp/consul:latest
+    container_name: consul_test
+    ports:
+      - "8500:8500"
+    volumes:
+      - ./consul/data:/consul/data
+    command: consul agent -server -bootstrap-expect=1 -client=0.0.0.0 -data-dir=/consul/data -ui -log-level=debug
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8500/v1/status/leader"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - vaultnet
+
+networks:
+  vaultnet:
+    driver: bridge
